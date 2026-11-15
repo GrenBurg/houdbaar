@@ -2,7 +2,7 @@
 
 Een kleine telefoon-app (PWA) om het etiket van vleeswaren te fotograferen. De app leest de houdbaarheidsdatum uit en zet in de gedeelde Google Agenda een afspraak voor de hele dag over de laatste dagen tot die datum.
 
-**App:** https://grenburg.github.io/Houdbaar/
+**App:** https://grenburg.github.io/houdbaar/
 
 ## Gebruik
 1. Tik op **Foto van etiket maken**. De datum wordt op de telefoon zelf uitgelezen (Tesseract.js).
