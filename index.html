@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#7a1f1f">
+<title>Houdbaar</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#f6f1ea; --card:#fffdf9; --ink:#2b2222; --muted:#7b6d66;
+    --red:#7a1f1f; --red2:#a33a32; --ok:#2f6b3a; --warn:#b36b00; --line:#e4d9cd;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{background:var(--red);color:#fff;padding:calc(14px + env(safe-area-inset-top)) 18px 14px;
+    display:flex;align-items:center;gap:10px}
+  header h1{font-size:20px;margin:0;letter-spacing:.5px}
+  header span{opacity:.75;font-size:13px}
+  main{max-width:560px;margin:0 auto;padding:14px 14px 90px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  h2{font-size:15px;margin:0 0 10px;color:var(--red);text-transform:uppercase;letter-spacing:.6px}
+  button,.btn{appearance:none;border:0;border-radius:10px;padding:13px 16px;font:inherit;font-weight:600;
+    cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+  .primary{background:var(--red);color:#fff;width:100%}
+  .primary:disabled{opacity:.45}
+  .ghost{background:#efe6dc;color:var(--ink)}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .row>*{flex:1}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  input[type=text],input[type=date],select{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;
+    font:inherit;background:#fff;color:var(--ink)}
+  #stage{position:relative;margin-top:12px;display:none;touch-action:none;user-select:none}
+  #stage canvas{width:100%;border-radius:10px;display:block;background:#222}
+  #sel{position:absolute;border:2px dashed #ffd54a;background:rgba(255,213,74,.15);display:none;pointer-events:none}
+  .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .chip{background:#efe6dc;border-radius:999px;padding:6px 12px;font-size:14px;border:1px solid transparent}
+  .chip.on{background:#fbe3df;border-color:var(--red2);color:var(--red)}
+  #status{font-size:14px;margin-top:10px;min-height:20px}
+  .bar{height:6px;background:#efe6dc;border-radius:4px;overflow:hidden;margin-top:6px;display:none}
+  .bar i{display:block;height:100%;width:0;background:var(--red2);transition:width .2s}
+  .summary{background:#f3ece4;border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
+  ul.list{list-style:none;margin:0;padding:0}
+  ul.list li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+  ul.list li:first-child{border-top:0}
+  .badge{min-width:64px;text-align:center;border-radius:8px;padding:4px 6px;font-size:13px;font-weight:700;color:#fff}
+  .b-ok{background:var(--ok)} .b-warn{background:var(--warn)} .b-bad{background:var(--red)}
+  .li-main{flex:1;min-width:0}
+  .li-main b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .li-main small{color:var(--muted)}
+  .x{background:none;padding:6px 8px;color:var(--muted);font-size:18px}
+  details{font-size:14px} summary{cursor:pointer;color:var(--muted)}
+  .empty{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#fff"/><path d="M18 40c0-9 7-18 17-18 7 0 11 4 11 9 0 7-8 13-17 13-6 0-11-2-11-4z" fill="#c9554b"/><circle cx="38" cy="31" r="3" fill="#fff"/><path d="M44 18v12M44 30l-3 3M44 30l3 3" stroke="#7a1f1f" stroke-width="3" stroke-linecap="round"/></svg>
+  <div><h1>Houdbaar</h1><span>Etiket scannen → melding in de agenda</span></div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1 · Etiket</h2>
+    <input id="file" type="file" accept="image/*" capture="environment" hidden>
+    <button class="primary" id="btnPhoto">📷 Foto van etiket maken</button>
+    <div id="stage"><canvas id="cv"></canvas><div id="sel"></div></div>
+    <p class="hint" id="selHint" style="display:none">Tip: sleep met je vinger een kader om alleen de datum, dan leest hij beter.</p>
+    <div class="row" id="imgTools" style="display:none;margin-top:8px">
+      <button class="ghost" id="btnRot">↻ Draaien</button>
+      <button class="ghost" id="btnRead">🔍 Datum lezen</button>
+    </div>
+    <div class="bar" id="bar"><i></i></div>
+    <div id="status"></div>
+    <div class="chips" id="cands"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Controleren</h2>
+    <label for="name">Product</label>
+    <input id="name" type="text" placeholder="bv. Salami, Achterham…" list="prodlist" autocomplete="off">
+    <datalist id="prodlist"></datalist>
+    <label for="date">Te gebruiken tot</label>
+    <input id="date" type="date">
+    <label for="days">Melding hoeveel dagen?</label>
+    <select id="days">
+      <option value="1">Alleen de laatste dag</option>
+      <option value="2">Laatste 2 dagen</option>
+      <option value="3" selected>Laatste 3 dagen</option>
+      <option value="4">Laatste 4 dagen</option>
+    </select>
+    <div class="summary" id="summary">Vul een datum in.</div>
+    <div style="margin-top:12px">
+      <button class="primary" id="btnCal" disabled>📅 Zet in Google Agenda</button>
+    </div>
+    <p class="hint">Google Agenda opent met de afspraak al ingevuld. Kies daar jullie <b>gedeelde agenda</b> en tik op <b>Opslaan</b>.</p>
+  </section>
+
+  <section class="card">
+    <h2>In de koelkast</h2>
+    <ul class="list" id="list"></ul>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Instellingen</summary>
+      <label for="calName">Naam van jullie gedeelde agenda (alleen als geheugensteun)</label>
+      <input id="calName" type="text" placeholder="bv. Thuis">
+      <label for="prefix">Titel-voorvoegsel</label>
+      <input id="prefix" type="text" placeholder="🥓">
+      <p class="hint">Meldingen: zet in Google Agenda bij de gedeelde agenda de standaardmelding voor <i>hele-dag-afspraken</i> op bv. "op de dag om 09:00". Dan krijgen jullie allebei elke ochtend een seintje.</p>
+    </details>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+<script>
+const $ = s => document.querySelector(s);
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+
+/* ---------- datum-helpers ---------- */
+const pad = n => String(n).padStart(2,'0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const ymd = d => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+const fromIso = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+const today = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
+const DAGEN = ['zo','ma','di','wo','do','vr','za'];
+const MAANDEN = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
+const nice = d => `${DAGEN[d.getDay()]} ${d.getDate()} ${MAANDEN[d.getMonth()]}`;
+const daysUntil = d => Math.round((d - today()) / 864e5);
+
+/* ---------- datum uit OCR-tekst halen ---------- */
+const MONTHS = {JAN:1,FEB:2,MRT:3,MAR:3,MAA:3,APR:4,MEI:5,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OKT:10,OCT:10,NOV:11,DEC:12};
+const KEY_GOOD = /(T\.?\s?G\.?\s?T|T\.?\s?H\.?\s?T|GEBRUIKEN\s*TOT|HOUDBAAR\s*TOT|MINSTE\s*HOUDBAAR|VERBRUIKEN|USE\s*BY|BEST\s*BEFORE|BB|EXP|MHD|ZU\s*VERBRAUCHEN|A\s*CONSOMMER|DLC)/;
+const KEY_BAD  = /(VERPAKT|GEPRODUCEERD|PRODUCTIE|PACKED|PROD|BEREID|INGEVROREN)/;
+
+function fixOcr(t){
+  t = t.toUpperCase();
+  const map = {O:'0',D:'0',Q:'0',I:'1',L:'1','|':'1',S:'5',B:'8',Z:'2',G:'6'};
+  // alleen letters die direct naast cijfers/scheidingstekens staan omzetten
+  for (let i=0;i<2;i++){
+    t = t.replace(/([0-9][\-.\/ ]?)([ODQIL|SBZG])/g, (m,a,b)=>a+map[b])
+         .replace(/([ODQIL|SBZG])([\-.\/ ]?[0-9])/g, (m,a,b)=>map[a]+b);
+  }
+  return t;
+}
+
+function makeDate(d, m, y){
+  const t = today();
+  let noYear = false;
+  if (y === undefined || y === null || y === ''){ noYear = true; y = t.getFullYear(); }
+  y = Number(y); if (y < 100) y += 2000;
+  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 2020 || y > 2100) return null;
+  let dt = new Date(y, m-1, d);
+  if (dt.getMonth() !== m-1) return null;
+  if (noYear && dt < addDays(t, -60)) dt = new Date(y+1, m-1, d);
+  return {date: dt, noYear};
+}
+
+function findDates(raw){
+  const lines = raw.split(/\n/);
+  const out = [];
+  const t = today();
+  lines.forEach((line0, li) => {
+    const orig = line0.toUpperCase();
+    const line = fixOcr(line0);
+    const ctx = (lines[li-1]||'').toUpperCase() + ' ' + orig;
+    const push = (res, idx, len, extra) => {
+      if (!res) return;
+      const before = line.slice(Math.max(0, idx-28), idx);
+      let score = extra || 0;
+      if (KEY_GOOD.test(before) || (KEY_GOOD.test(ctx) && !KEY_BAD.test(before))) score += 4;
+      if (KEY_BAD.test(before)) score -= 5;
+      if (!res.noYear) score += 1;
+      const dd = daysUntil(res.date);
+      if (dd < -14 || dd > 120) score -= 10;          // vleeswaren: onwaarschijnlijk
+      else if (dd >= 0 && dd <= 45) score += 2;
+      out.push({date: res.date, score, src: line.substr(idx, len).trim()});
+    };
+    let m;
+    // 18-11-2026, 18.11.26, 18/11/26, 18 11 26
+    const r1 = /(?<!\d)(\d{1,2})\s?[\-.\/ ]\s?(\d{1,2})\s?[\-.\/ ]\s?(\d{4}|\d{2})(?!\d)/g;
+    while ((m = r1.exec(line))) push(makeDate(+m[1], +m[2], m[3]), m.index, m[0].length, 0);
+    // 18 NOV 2026, 18NOV26, 18-NOV
+    const r2 = /(?<!\d)(\d{1,2})\s?[\-.\/ ]?\s?(JAN|FEB|MRT|MAR|MAA|APR|MEI|MAY|JUN|JUL|AUG|SEP|OKT|OCT|NOV|DEC)[A-Z]*\.?(?:\s?[\-.\/ ]?\s?(\d{4}|\d{2})(?!\d))?/g;
+    while ((m = r2.exec(orig))) push(makeDate(+m[1], MONTHS[m[2]], m[3]), m.index, m[0].length, 1);
+    // 18-11 (zonder jaar)
+    const r3 = /(?<![\d\-.\/])(\d{1,2})\s?[\-.\/]\s?(\d{1,2})(?![\d]|\s?[\-.\/]\s?\d)/g;
+    while ((m = r3.exec(line))) push(makeDate(+m[1], +m[2]), m.index, m[0].length, -1);
+    // 181126 (aaneengesloten, ddmmjj)
+    const r4 = /(?<!\d)(\d{2})(\d{2})(\d{2})(?!\d)/g;
+    while ((m = r4.exec(line))) push(makeDate(+m[1], +m[2], m[3]), m.index, m[0].length, -2);
+  });
+  // ontdubbelen: zelfde datum → hoogste score
+  const byDay = {};
+  out.forEach(c => { const k = iso(c.date); if (!byDay[k] || byDay[k].score < c.score) byDay[k] = c; });
+  return Object.values(byDay)
+    .filter(c => c.score > -5)
+    .sort((a,b) => b.score - a.score || b.date - a.date);
+}
+
+/* ---------- foto + kader ---------- */
+const cv = $('#cv'), ctx2 = cv.getContext('2d');
+let img = null, rot = 0, selRect = null;
+
+$('#btnPhoto').onclick = () => $('#file').click();
+$('#file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const bmp = await loadImage(f);
+  img = bmp; rot = 0; selRect = null;
+  draw();
+  $('#stage').style.display = 'block';
+  $('#imgTools').style.display = 'flex';
+  $('#selHint').style.display = 'block';
+  e.target.value = '';
+  runOcr();
+};
+
+function loadImage(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      // verkleinen tot max 2000 px
+      const s = Math.min(1, 2000 / Math.max(im.naturalWidth, im.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(im.naturalWidth*s); c.height = Math.round(im.naturalHeight*s);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c);
+    };
+    im.onerror = rej; im.src = url;
+  });
+}
+
+function draw(){
+  const w = img.width, h = img.height;
+  const swap = rot % 180 !== 0;
+  cv.width = swap ? h : w; cv.height = swap ? w : h;
+  ctx2.save();
+  ctx2.translate(cv.width/2, cv.height/2);
+  ctx2.rotate(rot * Math.PI/180);
+  ctx2.drawImage(img, -w/2, -h/2);
+  ctx2.restore();
+  $('#sel').style.display = 'none'; selRect = null;
+}
+
+$('#btnRot').onclick = () => { rot = (rot + 90) % 360; draw(); runOcr(); };
+$('#btnRead').onclick = () => runOcr();
+
+// kader slepen
+(() => {
+  const stage = $('#stage'), sel = $('#sel');
+  let start = null;
+  const pt = e => { const r = cv.getBoundingClientRect(); return {x: Math.max(0,Math.min(r.width, e.clientX - r.left)), y: Math.max(0,Math.min(r.height, e.clientY - r.top)), r}; };
+  stage.addEventListener('pointerdown', e => { start = pt(e); stage.setPointerCapture(e.pointerId); sel.style.display='none'; });
+  stage.addEventListener('pointermove', e => {
+    if (!start) return; const p = pt(e);
+    const x = Math.min(start.x,p.x), y = Math.min(start.y,p.y), w = Math.abs(p.x-start.x), h = Math.abs(p.y-start.y);
+    Object.assign(sel.style, {display:'block', left:x+'px', top:y+'px', width:w+'px', height:h+'px'});
+  });
+  stage.addEventListener('pointerup', e => {
+    if (!start) return; const p = pt(e);
+    const w = Math.abs(p.x-start.x), h = Math.abs(p.y-start.y);
+    if (w > 20 && h > 12){
+      const k = cv.width / p.r.width;
+      selRect = {x: Math.min(start.x,p.x)*k, y: Math.min(start.y,p.y)*k, w: w*k, h: h*k};
+      runOcr();
+    } else { sel.style.display='none'; selRect = null; }
+    start = null;
+  });
+})();
+
+// beeld voorbewerken: uitsnede, opschalen, grijs, contrast
+function prepCanvas(){
+  const r = selRect || {x:0, y:0, w:cv.width, h:cv.height};
+  const scale = Math.min(3, Math.max(1, 1400 / Math.max(r.w, r.h)));
+  const c = document.createElement('canvas');
+  c.width = Math.round(r.w*scale); c.height = Math.round(r.h*scale);
+  const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(cv, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+  const id = g.getImageData(0, 0, c.width, c.height), d = id.data;
+  let min = 255, max = 0;
+  for (let i=0;i<d.length;i+=4){ const v = 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; d[i]=v; if(v<min)min=v; if(v>max)max=v; }
+  const span = Math.max(1, max-min);
+  for (let i=0;i<d.length;i+=4){ const v = (d[i]-min)*255/span; d[i]=d[i+1]=d[i+2]=v; }
+  g.putImageData(id, 0, 0);
+  return c;
+}
+
+let worker = null, busy = false;
+async function getWorker(){
+  if (worker) return worker;
+  if (!window.Tesseract) throw new Error('Tekstherkenning nog niet geladen (internet nodig).');
+  worker = await Tesseract.createWorker('eng', 1, {
+    logger: m => { if (m.status === 'recognizing text') setBar(m.progress); }
+  });
+  return worker;
+}
+function setBar(p){ $('#bar').style.display = 'block'; $('#bar i').style.width = Math.round(p*100)+'%'; }
+function status(html){ $('#status').innerHTML = html; }
+
+async function runOcr(){
+  if (!img || busy) return;
+  busy = true; $('#cands').innerHTML = '';
+  status('Datum zoeken…'); setBar(0.02);
+  try{
+    const w = await getWorker();
+    const { data } = await w.recognize(prepCanvas());
+    const cands = findDates(data.text);
+    showCands(cands);
+  }catch(err){
+    status('⚠️ ' + (err.message || err) + ' Vul de datum hieronder zelf in.');
+  }finally{
+    busy = false; $('#bar').style.display = 'none';
+  }
+}
+
+function showCands(cands){
+  const box = $('#cands'); box.innerHTML = '';
+  if (!cands.length){
+    status('Geen datum gevonden. Sleep een kader om de datum, draai de foto, of vul hem hieronder zelf in.');
+    return;
+  }
+  const best = cands[0];
+  setDate(best.date);
+  status(`Gevonden: <b>${nice(best.date)}</b>${cands.length>1 ? ' (tik hieronder een andere als die beter klopt)' : ''}`);
+  cands.slice(0, 5).forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (i===0 ? ' on' : '');
+    b.textContent = `${pad(c.date.getDate())}-${pad(c.date.getMonth()+1)}-${c.date.getFullYear()}`;
+    b.onclick = () => { [...box.children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); setDate(c.date); };
+    box.appendChild(b);
+  });
+}
+
+/* ---------- formulier ---------- */
+const settings = LS.get('houdbaar.settings', {calName:'', prefix:'🥓', days:3});
+$('#calName').value = settings.calName; $('#prefix').value = settings.prefix; $('#days').value = settings.days;
+['calName','prefix'].forEach(id => $('#'+id).oninput = () => { settings[id] = $('#'+id).value; LS.set('houdbaar.settings', settings); });
+$('#days').onchange = () => { settings.days = +$('#days').value; LS.set('houdbaar.settings', settings); update(); };
+
+function setDate(d){ $('#date').value = iso(d); update(); }
+$('#date').oninput = update; $('#name').oninput = update;
+
+function plan(){
+  if (!$('#date').value) return null;
+  const end = fromIso($('#date').value);
+  const n = +$('#days').value;
+  let start = addDays(end, -(n-1));
+  if (start < today()) start = today();
+  if (end < today()) return {end, past:true};
+  return {start, end};
+}
+function title(){
+  const name = $('#name').value.trim() || 'Vleeswaren';
+  const end = fromIso($('#date').value);
+  const pre = ($('#prefix').value || '').trim();
+  return `${pre ? pre+' ' : ''}${name} op (tot ${end.getDate()}-${end.getMonth()+1})`;
+}
+
+function update(){
+  const p = plan(), s = $('#summary'), b = $('#btnCal');
+  if (!p){ s.textContent = 'Vul een datum in.'; b.disabled = true; return; }
+  if (p.past){ s.innerHTML = '⚠️ Deze datum is al voorbij.'; b.disabled = true; return; }
+  const span = iso(p.start) === iso(p.end) ? nice(p.end) : `${nice(p.start)} t/m ${nice(p.end)}`;
+  const cal = $('#calName').value.trim();
+  s.innerHTML = `<b>${esc(title())}</b><br>Hele dag · ${span}${cal ? `<br>Agenda: ${esc(cal)}` : ''}`;
+  b.disabled = false;
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+$('#btnCal').onclick = () => {
+  const p = plan(); if (!p || p.past) return;
+  const end = fromIso($('#date').value);
+  const details = `Te gebruiken tot ${nice(end)} ${end.getFullYear()}.\nToegevoegd met Houdbaar.`;
+  const url = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    + '&text=' + encodeURIComponent(title())
+    + '&dates=' + ymd(p.start) + '/' + ymd(addDays(p.end, 1))   // einddatum is exclusief
+    + '&details=' + encodeURIComponent(details)
+    + '&ctz=Europe/Amsterdam';
+  // bewaren in lijst
+  const items = LS.get('houdbaar.items', []);
+  const name = $('#name').value.trim() || 'Vleeswaren';
+  items.push({id: Date.now(), name, date: $('#date').value});
+  LS.set('houdbaar.items', items);
+  const prods = LS.get('houdbaar.prods', []);
+  if (!prods.includes(name)) { prods.unshift(name); LS.set('houdbaar.prods', prods.slice(0, 30)); }
+  renderList(); renderProds();
+  window.open(url, '_blank');
+};
+
+/* ---------- lijst ---------- */
+function renderList(){
+  let items = LS.get('houdbaar.items', []);
+  // opruimen: alles wat meer dan 7 dagen over datum is
+  items = items.filter(i => daysUntil(fromIso(i.date)) >= -7);
+  items.sort((a,b) => a.date.localeCompare(b.date));
+  LS.set('houdbaar.items', items);
+  const ul = $('#list'); ul.innerHTML = '';
+  if (!items.length){ ul.innerHTML = '<li class="empty">Nog niets gescand.</li>'; return; }
+  items.forEach(i => {
+    const d = fromIso(i.date), n = daysUntil(d);
+    const cls = n < 0 ? 'b-bad' : n <= 2 ? 'b-warn' : 'b-ok';
+    const txt = n < 0 ? 'over datum' : n === 0 ? 'vandaag' : n === 1 ? 'morgen' : `${n} dagen`;
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="badge ${cls}">${txt}</span><div class="li-main"><b>${esc(i.name)}</b><small>tot ${nice(d)}</small></div><button class="x" title="Op / weg">✓</button>`;
+    li.querySelector('.x').onclick = () => { LS.set('houdbaar.items', LS.get('houdbaar.items', []).filter(x => x.id !== i.id)); renderList(); };
+    ul.appendChild(li);
+  });
+}
+function renderProds(){
+  $('#prodlist').innerHTML = LS.get('houdbaar.prods', []).map(p => `<option value="${esc(p)}">`).join('');
+}
+renderList(); renderProds(); update();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
