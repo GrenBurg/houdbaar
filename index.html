@@ -98,7 +98,7 @@
     <div style="margin-top:12px">
       <button class="primary" id="btnCal" disabled>📅 Zet in Google Agenda</button>
     </div>
-    <p class="hint">Google Agenda opent met de afspraak al ingevuld. Kies daar jullie <b>gedeelde agenda</b> en tik op <b>Opslaan</b>.</p>
+    <p class="hint" id="calHint">Google Agenda opent met de afspraak al ingevuld. Kies daar jullie <b>gedeelde agenda</b> en tik op <b>Opslaan</b>.</p>
   </section>
 
   <section class="card">
@@ -111,6 +111,9 @@
       <summary>Instellingen</summary>
       <label for="calName">Naam van jullie gedeelde agenda (alleen als geheugensteun)</label>
       <input id="calName" type="text" placeholder="bv. Thuis">
+      <label for="code">Koppelcode (zelfde als VIKING//OS)</label>
+      <input id="code" type="text" placeholder="geheime code" autocomplete="off" spellcheck="false" autocapitalize="off">
+      <p class="hint">Met koppelcode gaat de afspraak met één tik direct in de JurrIris Agenda, met kleuren geel → oranje → rood. Zonder code opent Google Agenda en kies je zelf de agenda.</p>
       <label for="prefix">Titel-voorvoegsel</label>
       <input id="prefix" type="text" placeholder="🥓">
       <p class="hint">Meldingen: zet in Google Agenda bij de gedeelde agenda de standaardmelding voor <i>hele-dag-afspraken</i> op bv. "op de dag om 09:00". Dan krijgen jullie allebei elke ochtend een seintje.</p>
@@ -416,6 +419,21 @@ function showCands(cands){
 }
 
 /* ---------- formulier ---------- */
+/* ---------- koppeling met de gedeelde agenda (via het Google-script van VIKING//OS) ---------- */
+// Het adres is niet geheim: zonder de koppelcode doet het script niets. De code staat alleen op het toestel.
+const AGENDA_BASE = 'https://script.google.com/macros/s/AKfycbycjBR2xMOluSLu0DnaONDN0KQLsXnybZIpYVww3Vl0wFRHOxr6Y-QnqIkjfT7-QzCAOw/exec';
+(function(){ try{ const h = new URLSearchParams(location.hash.slice(1)); if (h.get('code')) { LS.set('houdbaar.code', h.get('code').trim()); history.replaceState(null, '', location.pathname + location.search); } }catch(e){} })();
+const getCode = () => (LS.get('houdbaar.code', '') || '').trim();
+$('#code').value = getCode();
+$('#code').oninput = () => { LS.set('houdbaar.code', $('#code').value.trim()); syncCalUi(); };
+function syncCalUi(){
+  const direct = !!getCode();
+  $('#btnCal').textContent = direct ? '📅 Zet in JurrIris Agenda' : '📅 Zet in Google Agenda';
+  $('#calHint').innerHTML = direct
+    ? 'Komt direct in de <b>JurrIris Agenda</b>: geel, de dag ervoor oranje, de laatste dag rood.'
+    : 'Google Agenda opent met de afspraak al ingevuld. Kies daar jullie <b>gedeelde agenda</b> en tik op <b>Opslaan</b>.';
+}
+
 const settings = LS.get('houdbaar.settings', {calName:'', prefix:'🥓', days:3});
 $('#calName').value = settings.calName; $('#prefix').value = settings.prefix; $('#days').value = settings.days;
 ['calName','prefix'].forEach(id => $('#'+id).oninput = () => { settings[id] = $('#'+id).value; LS.set('houdbaar.settings', settings); });
@@ -451,15 +469,33 @@ function update(){
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-$('#btnCal').onclick = () => {
+$('#btnCal').onclick = async () => {
   const p = plan(); if (!p || p.past) return;
   const end = fromIso($('#date').value);
   const details = `Te gebruiken tot ${nice(end)} ${end.getFullYear()}.\nToegevoegd met Houdbaar.`;
+  const code = getCode();
+  if (code) {
+    const b = $('#btnCal'); b.disabled = true; const was = b.textContent; b.textContent = '⏳ Bezig…';
+    try {
+      const r = await fetch(AGENDA_BASE, { method: 'POST', body: JSON.stringify({ token: code, action: 'add', title: title(), end: $('#date').value, days: +$('#days').value, details }) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || 'onbekende fout');
+      remember();
+      $('#summary').innerHTML = `✅ <b>Staat in de ${esc(d.calendar)}</b> (${d.days.length} ${d.days.length === 1 ? 'dag' : 'dagen'}).`;
+    } catch (e) {
+      $('#summary').innerHTML = `⚠️ Niet gelukt: ${esc(String(e.message || e))}. Controleer de koppelcode bij Instellingen, of probeer het opnieuw.`;
+    } finally { b.textContent = was; b.disabled = false; }
+    return;
+  }
   const url = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
     + '&text=' + encodeURIComponent(title())
     + '&dates=' + ymd(p.start) + '/' + ymd(addDays(p.end, 1))   // einddatum is exclusief
     + '&details=' + encodeURIComponent(details)
     + '&ctz=Europe/Amsterdam';
+  remember();
+  window.open(url, '_blank');
+};
+function remember(){
   // bewaren in lijst
   const items = LS.get('houdbaar.items', []);
   const name = $('#name').value.trim() || 'Vleeswaren';
@@ -468,8 +504,7 @@ $('#btnCal').onclick = () => {
   const prods = LS.get('houdbaar.prods', []);
   if (!prods.includes(name)) { prods.unshift(name); LS.set('houdbaar.prods', prods.slice(0, 30)); }
   renderList(); renderProds();
-  window.open(url, '_blank');
-};
+}
 
 /* ---------- lijst ---------- */
 function renderList(){
@@ -493,7 +528,7 @@ function renderList(){
 function renderProds(){
   $('#prodlist').innerHTML = LS.get('houdbaar.prods', []).map(p => `<option value="${esc(p)}">`).join('');
 }
-renderList(); renderProds(); update();
+renderList(); renderProds(); update(); syncCalUi();
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
