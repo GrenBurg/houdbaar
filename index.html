@@ -140,7 +140,7 @@ const daysUntil = d => Math.round((d - today()) / 864e5);
 
 /* ---------- datum uit OCR-tekst halen ---------- */
 const MONTHS = {JAN:1,FEB:2,MRT:3,MAR:3,MAA:3,APR:4,MEI:5,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OKT:10,OCT:10,NOV:11,DEC:12};
-const KEY_GOOD = /(T\.?\s?G\.?\s?T|T\.?\s?H\.?\s?T|GEBRUIKEN\s*TOT|HOUDBAAR\s*TOT|MINSTE\s*HOUDBAAR|VERBRUIKEN|USE\s*BY|BEST\s*BEFORE|BB|EXP|MHD|ZU\s*VERBRAUCHEN|A\s*CONSOMMER|DLC)/;
+const KEY_GOOD = /(T\s?\/\s?M|T\.?\s?G\.?\s?T|T\.?\s?H\.?\s?T|GEBRUIKEN\s*TOT|HOUDBAAR\s*TOT|MINSTE\s*HOUDBAAR|VERBRUIKEN|USE\s*BY|BEST\s*BEFORE|BB|EXP|MHD|ZU\s*VERBRAUCHEN|A\s*CONSOMMER|DLC)/;
 const KEY_BAD  = /(VERPAKT|GEPRODUCEERD|PRODUCTIE|PACKED|PROD|BEREID|INGEVROREN)/;
 
 function fixOcr(t){
@@ -182,8 +182,9 @@ function findDates(raw){
       if (KEY_BAD.test(before)) score -= 5;
       if (!res.noYear) score += 1;
       const dd = daysUntil(res.date);
-      if (dd < -14 || dd > 120) score -= 10;          // vleeswaren: onwaarschijnlijk
-      else if (dd >= 0 && dd <= 45) score += 2;
+      if (dd >= 0 && dd <= 45) score += 2;            // typisch voor vleeswaren
+      else if (dd < 0) score -= 1;                    // al voorbij: wel tonen, met waarschuwing
+      if (dd < -400 || dd > 800) score -= 20;         // vrijwel zeker geen houdbaarheidsdatum
       out.push({date: res.date, score, src: line.substr(idx, len).trim()});
     };
     let m;
@@ -204,7 +205,7 @@ function findDates(raw){
   const byDay = {};
   out.forEach(c => { const k = iso(c.date); if (!byDay[k] || byDay[k].score < c.score) byDay[k] = c; });
   return Object.values(byDay)
-    .filter(c => c.score > -5)
+    .filter(c => c.score > -15)
     .sort((a,b) => b.score - a.score || b.date - a.date);
 }
 
@@ -333,7 +334,8 @@ function showCands(cands){
   }
   const best = cands[0];
   setDate(best.date);
-  status(`Gevonden: <b>${nice(best.date)}</b>${cands.length>1 ? ' (tik hieronder een andere als die beter klopt)' : ''}`);
+  const past = daysUntil(best.date) < 0 ? ` ⚠️ <b>al voorbij!</b>` : '';
+  status(`Gevonden: <b>${nice(best.date)} ${best.date.getFullYear()}</b>${past}${cands.length>1 ? ' (tik hieronder een andere als die beter klopt)' : ''}`);
   cands.slice(0, 5).forEach((c, i) => {
     const b = document.createElement('button');
     b.className = 'chip' + (i===0 ? ' on' : '');
@@ -371,7 +373,7 @@ function title(){
 function update(){
   const p = plan(), s = $('#summary'), b = $('#btnCal');
   if (!p){ s.textContent = 'Vul een datum in.'; b.disabled = true; return; }
-  if (p.past){ s.innerHTML = '⚠️ Deze datum is al voorbij.'; b.disabled = true; return; }
+  if (p.past){ s.innerHTML = `⚠️ Deze datum (${nice(p.end)} ${p.end.getFullYear()}) is al voorbij — niet meer eten, of controleer de datum.`; b.disabled = true; return; }
   const span = iso(p.start) === iso(p.end) ? nice(p.end) : `${nice(p.start)} t/m ${nice(p.end)}`;
   const cal = $('#calName').value.trim();
   s.innerHTML = `<b>${esc(title())}</b><br>Hele dag · ${span}${cal ? `<br>Agenda: ${esc(cal)}` : ''}`;
