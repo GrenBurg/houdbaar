@@ -145,10 +145,10 @@ const KEY_BAD  = /(VERPAKT|GEPRODUCEERD|PRODUCTIE|PACKED|PROD|BEREID|INGEVROREN)
 
 function fixOcr(t){
   t = t.toUpperCase();
-  const map = {O:'0',D:'0',Q:'0',I:'1',L:'1','|':'1',S:'5',B:'8',Z:'2',G:'6'};
+  const map = {O:'0',D:'0',Q:'0',I:'1',L:'1','|':'1',S:'5',B:'8',Z:'2',G:'6',T:'7',E:'8'};
   // alleen letters die direct naast cijfers/scheidingstekens staan omzetten
   for (let i=0;i<2;i++){
-    t = t.replace(/([0-9][\-.\/ ]?)([ODQIL|SBZG])/g, (m,a,b)=>a+map[b])
+    t = t.replace(/([0-9][\-.\/ ]?)([ODQIL|SBZGTE])/g, (m,a,b)=>a+map[b])
          .replace(/([ODQIL|SBZG])([\-.\/ ]?[0-9])/g, (m,a,b)=>map[a]+b);
   }
   return t;
@@ -176,7 +176,7 @@ function findDates(raw){
     const ctx = (lines[li-1]||'').toUpperCase() + ' ' + orig;
     const push = (res, idx, len, extra) => {
       if (!res) return;
-      const before = line.slice(Math.max(0, idx-28), idx);
+      const before = orig.slice(Math.max(0, idx-28), idx);
       let score = extra || 0;
       if (KEY_GOOD.test(before) || (KEY_GOOD.test(ctx) && !KEY_BAD.test(before))) score += 4;
       if (KEY_BAD.test(before)) score -= 5;
@@ -190,16 +190,19 @@ function findDates(raw){
     let m;
     // 18-11-2026, 18.11.26, 18/11/26, 18 11 26
     const r1 = /(?<!\d)(\d{1,2})\s?[\-.\/ ]\s?(\d{1,2})\s?[\-.\/ ]\s?(\d{4}|\d{2})(?!\d)/g;
-    while ((m = r1.exec(line))) push(makeDate(+m[1], +m[2], m[3]), m.index, m[0].length, 0);
+    while ((m = r1.exec(line))) { push(makeDate(+m[1], +m[2], m[3]), m.index, m[0].length, 0); r1.lastIndex = m.index + 1; };
+    // 2908-2027 / 29-082027 (één scheidingsteken weggevallen)
+    const r5 = /(?<!\d)(\d{2})[\-.\/]?(\d{2})[\-.\/]?(20\d{2})(?!\d)/g;
+    while ((m = r5.exec(line))) { push(makeDate(+m[1], +m[2], m[3]), m.index, m[0].length, -1); r5.lastIndex = m.index + 1; };
     // 18 NOV 2026, 18NOV26, 18-NOV
     const r2 = /(?<!\d)(\d{1,2})\s?[\-.\/ ]?\s?(JAN|FEB|MRT|MAR|MAA|APR|MEI|MAY|JUN|JUL|AUG|SEP|OKT|OCT|NOV|DEC)[A-Z]*\.?(?:\s?[\-.\/ ]?\s?(\d{4}|\d{2})(?!\d))?/g;
-    while ((m = r2.exec(orig))) push(makeDate(+m[1], MONTHS[m[2]], m[3]), m.index, m[0].length, 1);
+    while ((m = r2.exec(orig))) { push(makeDate(+m[1], MONTHS[m[2]], m[3]), m.index, m[0].length, 1); r2.lastIndex = m.index + 1; };
     // 18-11 (zonder jaar)
     const r3 = /(?<![\d\-.\/])(\d{1,2})\s?[\-.\/]\s?(\d{1,2})(?![\d]|\s?[\-.\/]\s?\d)/g;
-    while ((m = r3.exec(line))) push(makeDate(+m[1], +m[2]), m.index, m[0].length, -1);
+    while ((m = r3.exec(line))) { push(makeDate(+m[1], +m[2]), m.index, m[0].length, -1); r3.lastIndex = m.index + 1; };
     // 181126 (aaneengesloten, ddmmjj)
     const r4 = /(?<!\d)(\d{2})(\d{2})(\d{2})(?!\d)/g;
-    while ((m = r4.exec(line))) push(makeDate(+m[1], +m[2], m[3]), m.index, m[0].length, -2);
+    while ((m = r4.exec(line))) { push(makeDate(+m[1], +m[2], m[3]), m.index, m[0].length, -2); r4.lastIndex = m.index + 1; };
   });
   // ontdubbelen: zelfde datum → hoogste score
   const byDay = {};
@@ -281,21 +284,64 @@ $('#btnRead').onclick = () => runOcr();
 })();
 
 // beeld voorbewerken: uitsnede, opschalen, grijs, contrast
-function prepCanvas(){
+function prepGray(target){
   const r = selRect || {x:0, y:0, w:cv.width, h:cv.height};
-  const scale = Math.min(3, Math.max(1, 1400 / Math.max(r.w, r.h)));
+  const scale = Math.min(3, Math.max(0.3, target / Math.max(r.w, r.h)));
   const c = document.createElement('canvas');
   c.width = Math.round(r.w*scale); c.height = Math.round(r.h*scale);
-  const g = c.getContext('2d');
+  const g = c.getContext('2d', {willReadFrequently:true});
   g.imageSmoothingQuality = 'high';
   g.drawImage(cv, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
   const id = g.getImageData(0, 0, c.width, c.height), d = id.data;
-  let min = 255, max = 0;
-  for (let i=0;i<d.length;i+=4){ const v = 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; d[i]=v; if(v<min)min=v; if(v>max)max=v; }
-  const span = Math.max(1, max-min);
-  for (let i=0;i<d.length;i+=4){ const v = (d[i]-min)*255/span; d[i]=d[i+1]=d[i+2]=v; }
-  g.putImageData(id, 0, 0);
-  return c;
+  const gray = new Float32Array(c.width*c.height);
+  for (let i=0,j=0;i<d.length;i+=4,j++) gray[j] = 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+  stretch(gray);
+  return {w:c.width, h:c.height, gray};
+}
+function stretch(a){
+  // contrast oprekken op 1e–99e percentiel
+  const hist = new Uint32Array(256); a.forEach(v => hist[Math.max(0,Math.min(255,v|0))]++);
+  let lo=0, hi=255, acc=0, n=a.length;
+  for (let i=0;i<256;i++){ acc+=hist[i]; if (acc > n*0.01){ lo=i; break; } }
+  acc=0; for (let i=255;i>=0;i--){ acc+=hist[i]; if (acc > n*0.01){ hi=i; break; } }
+  const span = Math.max(1, hi-lo);
+  for (let i=0;i<n;i++) a[i] = Math.max(0, Math.min(255, (a[i]-lo)*255/span));
+}
+// 1D-minimumfilter (donker uitsmeren) horizontaal + verticaal
+function minFilter(src, w, h, k){
+  const r = k>>1, tmp = new Float32Array(src.length), out = new Float32Array(src.length);
+  for (let y=0;y<h;y++){ const o=y*w;
+    for (let x=0;x<w;x++){ let m=255; for (let i=Math.max(0,x-r);i<=Math.min(w-1,x+r);i++){ const v=src[o+i]; if(v<m)m=v; } tmp[o+x]=m; } }
+  for (let x=0;x<w;x++){
+    for (let y=0;y<h;y++){ let m=255; for (let i=Math.max(0,y-r);i<=Math.min(h-1,y+r);i++){ const v=tmp[i*w+x]; if(v<m)m=v; } out[y*w+x]=m; } }
+  return out;
+}
+function boxBlur(src, w, h){
+  const out = new Float32Array(src.length);
+  for (let y=0;y<h;y++) for (let x=0;x<w;x++){
+    let s=0,n=0; for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ const xx=x+dx, yy=y+dy; if(xx>=0&&yy>=0&&xx<w&&yy<h){ s+=src[yy*w+xx]; n++; } }
+    out[y*w+x]=s/n; }
+  return out;
+}
+function toCanvas(a, w, h, thr){
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const g = c.getContext('2d'), id = g.createImageData(w, h), d = id.data;
+  for (let i=0,j=0;j<a.length;i+=4,j++){ const v = thr ? (a[j] < thr ? 0 : 255) : a[j]; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255; }
+  g.putImageData(id, 0, 0); return c;
+}
+// varianten: normaal, en voor stipjesprint (inkjet) de stipjes aan elkaar laten lopen
+function* variants(){
+  const base = prepGray(1400);
+  yield {canvas: toCanvas(base.gray, base.w, base.h, 0), dot:false};
+  const plan = selRect ? [[800,[5,7,9]], [1400,[9,11,5,7,13]], [800,[11,13]]] : [[1000,[5,7]], [1400,[7,11]]];
+  for (const [target, ks] of plan){
+    const {w, h, gray} = target === 1400 ? base : prepGray(target);
+    for (const k of ks){
+      const a = boxBlur(boxBlur(minFilter(gray, w, h, k), w, h), w, h);
+      stretch(a);
+      yield {canvas: toCanvas(a, w, h, 140), dot:true};
+    }
+  }
 }
 
 let worker = null, busy = false;
@@ -316,12 +362,36 @@ async function runOcr(){
   status('Datum zoeken…'); setBar(0.02);
   try{
     const w = await getWorker();
-    const { data } = await w.recognize(prepCanvas());
-    const cands = findDates(data.text);
+    const votes = {};   // datum → {date, score, n}
+    let pass = 0;
+    let dotMode = false;
+    for (const {canvas, dot} of variants()){
+      pass++;
+      if (dot !== dotMode){
+        // stipjesprint: alleen cijfers en scheidingstekens toestaan
+        await w.setParameters({tessedit_char_whitelist: dot ? '0123456789-./' : '', tessedit_pageseg_mode: '6'});
+        dotMode = dot;
+      }
+      status(pass === 1 ? 'Datum zoeken…' : `Stipjesprint? Nog even proberen… (${pass-1})`);
+      const { data } = await w.recognize(canvas);
+      for (const c of findDates(data.text)){
+        const k = iso(c.date);
+        if (!votes[k]) votes[k] = {date:c.date, score:c.score, n:0};
+        votes[k].n++; votes[k].score = Math.max(votes[k].score, c.score);
+      }
+      // gewone print met een duidelijke datum → klaar
+      if (pass === 1 && Object.values(votes).some(v => v.score >= 3)) break;
+      // stipjesprint: stoppen zodra dezelfde goede datum 2× gevonden is
+      if (Object.values(votes).some(v => v.n >= 2 && v.score >= 1)) break;
+    }
+    const cands = Object.values(votes)
+      .map(v => ({date:v.date, score: v.score + (v.n-1)*2}))
+      .sort((a,b) => b.score - a.score || b.date - a.date);
     showCands(cands);
   }catch(err){
     status('⚠️ ' + (err.message || err) + ' Vul de datum hieronder zelf in.');
   }finally{
+    if (worker) { try{ await worker.setParameters({tessedit_char_whitelist: ''}); }catch(e){} }
     busy = false; $('#bar').style.display = 'none';
   }
 }
@@ -329,7 +399,7 @@ async function runOcr(){
 function showCands(cands){
   const box = $('#cands'); box.innerHTML = '';
   if (!cands.length){
-    status('Geen datum gevonden. Sleep een kader om de datum, draai de foto, of vul hem hieronder zelf in.');
+    status(selRect ? 'Geen datum gevonden. Probeer een iets ruimer of krapper kader, of vul hem hieronder zelf in.' : '<b>Geen datum gevonden.</b> Sleep met je vinger een kader om alleen de datum, dat helpt vooral bij stipjesprint.');
     return;
   }
   const best = cands[0];
